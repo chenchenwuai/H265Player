@@ -1,0 +1,39 @@
+{
+  "name": "h265-player",
+  "version": "0.0.1",
+  "description": "myself webpack cli. learning...",
+  "main": "index.js",
+  "scripts": {
+    "dev": "webpack --progress --mode development --config build/webpack.config.js",
+    "build": "webpack --progress --mode production --config build/webpack.config.js",
+    "build:dev": "webpack --progress --mode development --config build/webpack.config.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenchenwuai/my-webpack-cli.git"
+  },
+  "keywords": [
+    "webpack",
+    "cli"
+  ],
+  "author": "chenwuai",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/chenchenwuai/my-webpack-cli/issues"
+  },
+  "homepage": "https://github.com/chenchenwuai/my-webpack-cli#readme",
+  "devDependencies": {
+    "babel-core": "^6.26.3",
+    "babel-eslint": "^10.1.0",
+    "babel-loader": "^7.1.5",
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-preset-env": "^1.7.0",
+    "clean-webpack-plugin": "^3.0.0",
+    "webpack": "^4.41.2",
+    "webpack-cli": "^3.3.9",
+    "worker-loader": "^3.0.1"
+  },
+  "dependencies": {
+    "znu-event": "0.0.7"
+  }
+}

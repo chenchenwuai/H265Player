@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+
+<body>
+    <div style="margin: 20px;">
+        <input type="text" id="device_path" style="width:400px" value="/dist_2/link_1/3d786dc0-7bfa-3814-93ba-16d151b0aac2/0"/>
+        <button onclick="openStream(0)">打开主码流1080p流</button>
+        <button onclick="openStream(1)">打开辅码流720p流</button>
+        <button onclick="closeStream()">关闭</button>
+        <button onclick="cleanStream()">软关闭</button>
+        <button onclick="fullscreen()">全屏</button>
+    </div>
+  <div style="margin-top: 10px">
+    <canvas id="playCanvas" width="500" height='400'></canvas>
+  </div>
+
+  <script src="../dist/H265Player.js"></script>
+  <script type='text/javascript' src="./public/WCSWebsocket.js"></script>
+  <script>
+
+    var player = null;
+
+    function initPlayer(){
+      if(player === null){
+        player = new H265Player({
+          decoderPath: '/src/H265Decoder.js',
+          isDebug: true
+        })
+        player.on('renderProgress',function(e){
+          console.log('renderProgress',e)
+        })
+      }
+      console.log('player',player)
+      const canvasId = "playCanvas";
+      canvas = document.getElementById(canvasId);
+      player.play(canvas,function (e) {
+          console.log("play error ",e);
+      })
+    }
+
+    function decode(data,timestamp){
+      if(player){
+        // console.log('player decode',timestamp)
+        player.decode(data.buffer,timestamp)
+      }
+    }
+    function fullscreen(){
+      if(player){
+        player.fullscreen()
+      }
+    }
+
+
+    function openStream(quality){
+      if(WCS){
+        initPlayer()
+        
+        var message = {
+          namespace: 'WCS/MMS',
+          request: 'open.video',
+          msg_id: 0,
+          content: {
+            device_path: device_path,
+            params: {
+              video_quality: quality,
+              duration: 0
+            }
+          }
+        }
+        setTimeout(() => {
+          WCS.send(message, { cb: openStreamCB.bind(this) })
+        }, 500);
+      }
+    }
+
+    function openStreamCB(res,ctx){
+      console.log('[ Screen Item ] : _requestH264VideoCB', res, ctx)
+      if (res && res.reply === 200 && res.content && res.content.stream_id) {
+        stream_id = res.content.stream_id
+      }
+    }
+
+    function cleanStream(){
+      if(WCS && stream_id){
+        var message = {
+          namespace: 'WCS/MMS',
+          request: 'close.stream',
+          msg_id: 0,
+          content: {
+            stream_id: stream_id
+          }
+        }
+        WCS.send(message)
+      }
+      if(player){
+        player.clean()
+      }
+      console.log(player)
+    }
+
+    function closeStream(){
+      if(WCS && stream_id){
+        var message = {
+          namespace: 'WCS/MMS',
+          request: 'close.stream',
+          msg_id: 0,
+          content: {
+            stream_id: stream_id
+          }
+        }
+        WCS.send(message)
+      }
+      if(player){
+        player.destroy()
+      }
+      player = null
+    }
+
+    function _receive(e) {
+      // console.log('receive',e)
+      if(e.type === 'V'){
+        decode(e.data,e.info.timestamp)
+      }
+    }
+
+    var WCS = null;
+    var WCS_config = {
+      reconnectLimit: 3, // 最大重连次数
+      reconnectTimeout: 3000,
+      isDebug: false // 打印信息
+    }
+    var stream_id = 0;
+
+    var wcs_url = 'ws://192.168.8.105:3098'
+
+    var device_path = '/dist_2/link_2/175e4059-1c59-3aa3-b246-c42f773817fd/0'
+
+    var loginParams = {
+      user_name:'admin',
+      password:'fdc5e760dc424faa86a5cb0b1b1eb6c3'
+    }
+
+    createWCS();
+
+    function createWCS() {
+      WCS && WCS.destroy()
+      console.log('[ WCS_WS|baseWS ] : start create WCS_WS')
+      WCS = null
+
+      try {
+        // eslint-disable-next-line no-undef
+        const wcs_ws = WCS = new WCSWebsocket(JSON.parse(JSON.stringify(WCS_config)))
+        wcs_ws.onLogin = _wsLogin.bind(this) // 绑定 登录成功
+        wcs_ws.onClassError = _classError.bind(this) // 绑定 创建错误
+
+        wcs_ws.open(wcs_url, loginParams) // 建立websocket连接
+
+        wcs_ws.onreceive = _receive
+      } catch (e) {
+        console.error('[ WCS_WS|baseWS ] : create WCS_WS error', e)
+        return Promise.reject(e)
+      }
+    }
+
+    function _wsLogin(e) {
+      console.log('[ WCS_WS|baseWS ] : WCS Is Logined')
+    }
+
+    function _wsSend(message, ctx) {
+        WCS.send(message, ctx)
+    }
+
+    function _classError(e) {
+      console.log('[ WCS_WS ] : class error', e)
+    }
+  </script>
+</body>
+</html>
