@@ -1,34 +1,34 @@
 export const DECODE_STATUS = {
-  Idle : 0,
-  Initializing : 1,
-  Ready : 2,
-  Finished : 3
+  Idle: 0,
+  Initializing: 1,
+  Ready: 2,
+  Finished: 3
 }
 
 export const DECODE_MESSAGE = {
-  InitDecodeRES : 0, // 初始化decoder 请求
-  InitDecodeREQ : 1, // 初始化decoder 返回
+  InitDecodeRES: 0, // 初始化decoder 请求
+  InitDecodeREQ: 1, // 初始化decoder 返回
 
-  OpenDecodeRES : 2, // 打开 decode 进程
-  OpenDecodeREQ : 3,
+  OpenDecodeRES: 2, // 打开 decode 进程
+  OpenDecodeREQ: 3,
 
-  StartDecodeRES : 4, // 开始 decode 
-  StartDecodeREQ : 5,
+  StartDecodeRES: 4, // 开始 decode
+  StartDecodeREQ: 5,
 
-  FeedDataRES : 6, // 发送视频流
-  VideoFrameREQ : 7, // 解析视频流后返回数据
-  
-  PauseDecodeRES : 8,  // 暂停 decode
-  PauseDecodeREQ : 9,
-  
-  CloseDecodeRES : 10, // 关闭 decode 进程
-  CloseDecodeREQ : 11
+  FeedDataRES: 6, // 发送视频流
+  VideoFrameREQ: 7, // 解析视频流后返回数据
+
+  PauseDecodeRES: 8, // 暂停 decode
+  PauseDecodeREQ: 9,
+
+  CloseDecodeRES: 10, // 关闭 decode 进程
+  CloseDecodeREQ: 11
 }
 
 export const PLAYER_STATUS = {
-  Idle : 0,
-  Playing : 1,
-  Pause : 2
+  Idle: 0,
+  Playing: 1,
+  Pause: 2
 }
 
 /**
