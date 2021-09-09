@@ -1,4 +1,4 @@
-import { objectMerge,DECODE_STATUS, PLAYER_STATUS, DECODE_MESSAGE, createUniqueString } from './utils'
+import { objectMerge, DECODE_STATUS, PLAYER_STATUS, createUniqueString } from './utils'
 import WebGLPlayer from './webgl.js'
 import EventEmitter from 'znu-event'
 /**
@@ -7,14 +7,7 @@ import EventEmitter from 'znu-event'
  *  Version  0.0.1
  */
 class H265Player {
-  static isSupported(){
-    try {
-      return (typeof self.Worker !== 'undefined' && typeof self.WebGLRenderingContext !== 'undefined')
-    } catch (e) {
-      return false
-    }
-  }
-
+  
   constructor(config){
 
     this.TAG = 'H265Player'
@@ -64,27 +57,31 @@ class H265Player {
       var objData = e.data;
       self._Log('Get decodeWorker message',JSON.stringify(objData))
       switch(objData.type){
-        case DECODE_MESSAGE.InitDecodeREQ:
+        case 'DECODER_INITED':
           self.onInitDecoder()
           break
-        case DECODE_MESSAGE.OpenDecodeREQ:
+        case 'WASM_LOADED':
+          this.decodeWorker.postMessage({
+            type:'OPEN_DECODER',
+            config:{
+              isDebug: !!this.config.isDebug,
+              logLevel: !!this.config.isDebug ? 2 : 0
+            }
+          })
+          break
+        case 'DECODER_OPENED':
           self.onOpenDecoder()
           break
-        case DECODE_MESSAGE.VideoFrameREQ:
+        case 'DECODER_OPEN_ERROR':
+          self.onOpenDecoderError(objData.data)
+          break
+        case 'DECODER_DECODE_START':
+          break
+        case 'DECODE_VIDEO_FRAME':
           self.onVideoFrame(objData)
           break
       }
     }
-    var sendData = {
-      type:'INIT_DECODE',
-      config:{
-        isDebug:true,
-        logLevel:1,
-        DECODER_H265:this.DECODER_H265,
-        DECODE_MESSAGE : DECODE_MESSAGE
-      }
-    }
-    this.decodeWorker.postMessage(sendData)
   }
 
   play(canvas,callback){
@@ -114,14 +111,14 @@ class H265Player {
       this.callback = callback
   
       this.playerStatus = PLAYER_STATUS.Playing
-
-      this.startDecoding()
-  
-      this.displayLoop()
   
       this.webglPlayer = new WebGLPlayer(this.canvas, {
         preserveDrawingBuffer: false
       })
+
+      this.startDecoding()
+      this.displayLoop()
+
     } while (false)
   
     return res
@@ -146,7 +143,7 @@ class H265Player {
     for (let i = 0; i < 2; ++i) {
       var frame = this.frameBuffer[0];
       switch (frame.type) {
-          case DECODE_MESSAGE.VideoFrameREQ:
+          case 'DECODE_VIDEO_FRAME':
               if (this.displayVideoFrame(frame)) {
                 this.frameBuffer.shift();
               }
@@ -196,12 +193,16 @@ class H265Player {
     this.startDecoding()
   }
 
+  onOpenDecoderError(data) {
+    console.error('open h265 decoder error',data)
+  }
+
   decode(data,timestamp) {
     try {
       this._Log(`Decode Buffer, decoding:${this.decoding} timestamp:${timestamp}`)
       if(this.decoding){
         var objData = {
-          type:DECODE_MESSAGE.FeedDataRES,
+          type:'DECODER_FEED_BUFFER',
           data:data,
           timestamp:timestamp
         }
@@ -215,19 +216,19 @@ class H265Player {
 
   startDecoding(){
     this.decoding = true
-    this.decodeWorker.postMessage({ type:DECODE_MESSAGE.StartDecodeRES })
+    this.decodeWorker.postMessage({ type:'DECODER_START_DECODE' })
     this._Log('Send Message: start decode')
   }
 
   pauseDecoding(){
     this.decoding = false
-    this.decodeWorker.postMessage({ type:DECODE_MESSAGE.PauseDecodeRES })
+    this.decodeWorker.postMessage({ type:'DECODER_PAUSE_DECODE' })
     this._Log('Send Message: pause decode')
   }
 
   stopDecoding(){
     this.decoding = false
-    this.decodeWorker.postMessage({ type:DECODE_MESSAGE.CloseDecodeRES })
+    this.decodeWorker.postMessage({ type:'DECODER_STOP_DECODE' })
     this._Log('Send Message: Finish decode')
   }
 
@@ -342,6 +343,14 @@ class H265Player {
     var ms = now.getMilliseconds()
     var currentTimeStr = hour + ":" + min + ":" + sec + ":" + ms
     console.log(`[${currentTimeStr}][ ${this.TAG}|${this.CLASS_ID} ] : `, ...arguments) // https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/arguments
+  }
+
+  static isSupported(){
+    try {
+      return (typeof self.Worker !== 'undefined' && typeof self.WebGLRenderingContext !== 'undefined')
+    } catch (e) {
+      return false
+    }
   }
 }
 if (window) window.H265Player = H265Player

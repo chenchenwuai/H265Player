@@ -117,7 +117,7 @@
     }
 
     function _receive(e) {
-      // console.log('receive',e)
+      console.log('receive',e)
       if(e.type === 'V'){
         decode(e.data,e.info.timestamp)
       }
@@ -131,13 +131,13 @@
     }
     var stream_id = 0;
 
-    var wcs_url = 'ws://192.168.8.105:3098'
+    var wcs_url = 'ws://192.168.8.120:3098'
 
-    var device_path = '/dist_2/link_2/175e4059-1c59-3aa3-b246-c42f773817fd/0'
+    var device_path = '/dist_1/link_3/175e4059-1c59-3aa3-b246-c42f773817fd/0'
 
     var loginParams = {
       user_name:'admin',
-      password:'fdc5e760dc424faa86a5cb0b1b1eb6c3'
+      password:'ae47d13f248125bbfa0159541459f5e6'
     }
 
     createWCS();

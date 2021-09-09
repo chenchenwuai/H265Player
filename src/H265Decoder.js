@@ -1,6 +1,5 @@
 self.Module = {
   onRuntimeInitialized: function() {
-    console.log('Module onRuntimeInitialized')
     onWasmLoaded()
   }
 }
@@ -10,41 +9,39 @@ self.importScripts('libffmpeg_265.js')
 function H265Decoder(config) {
   this.TAG = 'H265Decoder'
   this.coreLogLevel = 2// js-0; wasm-1; ffmpeg-2
-  this.accurateSeek = true
+
   this.wasmLoaded = false
-  this.cacheBuffer = null
-  this.decodeTimer = null
-  this.videoCallback = null
-  this.first_timestamp = 0
-  this.config = {
-    isDebug: false,
-    DECODER_H265: 1,
-    DECODE_MESSAGE: {}
-  }
-
-  if (config) {
-    console.log('CONFIG', config)
-    this.config.isDebug = !!config.isDebug
-    config.DECODER_H265 !== undefined && (this.config.DECODER_H265 = config.DECODER_H265)
-    config.DECODE_MESSAGE !== undefined && (this.config.DECODE_MESSAGE = config.DECODE_MESSAGE)
-    config.logLevel !== undefined && (this.coreLogLevel = config.logLevel)
-  }
-
   this.enableDecode = false
+
+  this.accurateSeek = true
+  this.cacheBuffer = null
+
+  this.decodeTimer = null
+
+  this.videoCallback = null
+
+  this.first_timestamp = 0
+
+  this.DECODER_H265 = 1
+
+  this.isDebug = false
 
   this.initDecoder()
 }
 
 H265Decoder.prototype.initDecoder = function() {
   this._Log('Decode inited')
-  var obj = {
-    type: this.config.DECODE_MESSAGE.InitDecodeREQ
-  }
-  self.postMessage(obj)
+  self.postMessage({ type: 'DECODER_INITED' })
 }
 
-H265Decoder.prototype.openDecoder = function() {
-  this._Log('Open Decode')
+H265Decoder.prototype.openDecoder = function(config) {
+  this._Log('Open Decode', config)
+  if (typeof config.isDebug !== 'undefined') {
+    this.isDebug = !!config.isDebug
+  }
+  if (typeof config.coreLogLevel !== 'undefined') {
+    this.coreLogLevel = config.coreLogLevel
+  }
   var _this = this
   var videoCallback = Module.addFunction(function(addr_y, addr_u, addr_v, stride_y, stride_u, stride_v, width, height, pts) {
     const size = width * height + (width / 2) * (height / 2) + (width / 2) * (height / 2)
@@ -72,7 +69,7 @@ H265Decoder.prototype.openDecoder = function() {
       pos += tmp.length
     }
     var objData = {
-      type: _this.config.DECODE_MESSAGE.VideoFrameREQ,
+      type: 'DECODE_VIDEO_FRAME',
       data: data.buffer,
       width,
       height,
@@ -81,14 +78,12 @@ H265Decoder.prototype.openDecoder = function() {
     self.postMessage(objData, objData.data)
   })
 
-  var ret = Module._openDecoder(this.config.DECODER_H265, videoCallback, this.coreLogLevel)
+  var ret = Module._openDecoder(this.DECODER_H265, videoCallback, this.coreLogLevel)
   this.startDecoding()
-  if (ret == 0) {
-    var obj = {
-      type: this.config.DECODE_MESSAGE.OpenDecodeREQ
-    }
-    self.postMessage(obj)
+  if (ret === 0) {
+    self.postMessage({ type: 'DECODER_OPENED' })
   } else {
+    self.postMessage({ type: 'DECODER_OPEN_ERROR', data: { ret }})
     console.error('openDecoder failed with error', ret)
     return
   }
@@ -97,13 +92,13 @@ H265Decoder.prototype.openDecoder = function() {
 H265Decoder.prototype.startDecoding = function(interval) {
   this._Log('Start decoding.')
   this.enableDecode = true
-  self.postMessage({ type: this.config.DECODE_MESSAGE.StartDecodeREQ })
+  self.postMessage({ type: 'DECODER_DECODE_START' })
 }
 
 H265Decoder.prototype.pauseDecoding = function() {
   this._Log('Pause decoding.')
   this.enableDecode = false
-  self.postMessage({ type: this.config.DECODE_MESSAGE.PauseDecodeREQ })
+  self.postMessage({ type: 'DECODER_DECODE_PAUSE' })
 }
 
 H265Decoder.prototype.closeDecoder = function() {
@@ -113,7 +108,7 @@ H265Decoder.prototype.closeDecoder = function() {
   var ret = Module._closeDecoder()
   this._Log('Close ffmpeg decoder return ' + ret + '.')
 
-  self.postMessage({ type: this.config.DECODE_MESSAGE.CloseDecodeREQ })
+  self.postMessage({ type: 'DECODER_DECODE_STOP' })
 }
 
 H265Decoder.prototype.decode = function(data, timestamp) {
@@ -146,16 +141,16 @@ H265Decoder.prototype.getPTS = function(timestamp) {
 H265Decoder.prototype.onmessage = function(message) {
   this._Log(`Get message, type:${message.type}`)
   switch (message.type) {
-    case this.config.DECODE_MESSAGE.StartDecodeRES:
+    case 'DECODER_START_DECODE':
       this.startDecoding()
       break
-    case this.config.DECODE_MESSAGE.FeedDataRES:
+    case 'DECODER_FEED_BUFFER':
       this.receiveBuffer(message.data, message.timestamp)
       break
-    case this.config.DECODE_MESSAGE.PauseDecodeRES:
+    case 'DECODER_PAUSE_DECODE':
       this.pauseDecoding()
       break
-    case this.config.DECODE_MESSAGE.CloseDecodeRES:
+    case 'DECODER_STOP_DECODE':
       this.closeDecoder()
       break
     default:
@@ -167,11 +162,11 @@ H265Decoder.prototype.onmessage = function(message) {
 H265Decoder.prototype.onWasmLoaded = function() {
   console.log('Wasm loaded.')
   this.wasmLoaded = true
-  this.openDecoder()
+  self.postMessage({ type: 'WASM_LOADED' })
 }
 
 H265Decoder.prototype._Log = function() {
-  if (!this.config.isDebug) return
+  if (!this.isDebug) return
   var now = new Date(Date.now())
   var hour = now.getHours()
   var min = now.getMinutes()
@@ -181,10 +176,13 @@ H265Decoder.prototype._Log = function() {
   console.log(`[${currentTimeStr}][ ${this.TAG} ] : `, ...arguments) // https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/arguments
 }
 
+// 实例化H265Decoder类
+self.h265_decoder = new H265Decoder()
+
 self.onmessage = function(e) {
   var obj = e.data
-  if (obj.type === 'INIT_DECODE') {
-    self.h265_decoder = new H265Decoder(obj.config)
+  if (obj.type === 'OPEN_DECODE') { // 接收到 OPEN_DECODE 命令
+    self.h265_decoder.openDecoder(obj.config)
     return
   }
   if (!self.h265_decoder) {
