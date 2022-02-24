@@ -1,5 +1,5 @@
 {
-  "name": "h265-player",
+  "name": "h265-stream-player",
   "version": "1.0.0",
   "description": "h265 stream player",
   "main": "lib/h265-player.cjs.js",
@@ -17,7 +17,12 @@
     "release": "npm run eslint && npm run build && npm run version && npm pub && git push"
   },
   "keywords": [
-    "h265-player"
+    "h265",
+    "player",
+    "h265-player",
+    "h265-stream-player",
+    "video",
+    "webassmebly"
   ],
   "repository": {
     "type": "git",

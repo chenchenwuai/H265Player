@@ -4,11 +4,13 @@
 
 ## 安装
 ```bash
-npm i h265-player
+npm i h265-stream-player
 ```
 
 ## 使用
 ```javascript
+import H265Player from 'h265-stream-player'
+
 new H265Player(HTMLCanvasElement,Options)
 ```
 
@@ -31,12 +33,12 @@ canvas dom，用来绘制解码出来的图像
 有两种设置方式
 + 相对路径
 
-拼接规则为 `location.origin + baseLibPath + 'libffmpeg_265.js'`， 例如：baseLibPath = '/public/'，当前运行脚本的 `location.origin` 为 `http://192.168.1.10:9000'`， 则最后的拼接地址为 `http://192.168.1.10:9000/public/libffmpeg_265.js`
+拼接规则为 `location.origin + baseLibPath + 'libffmpeg_265.js'`， 例如：`baseLibPath = '/public/'`，当前运行脚本的 `location.origin` 为 `http://192.168.1.10:9000`， 则最后的拼接地址为 `http://192.168.1.10:9000/public/libffmpeg_265.js`
 + 一种是绝对路径，拼接规则为 `baseLibPath + 'libffmpeg_265.js'`
 
 + 绝对路径
 
-拼接规则为 `baseLibPath + 'libffmpeg_265.js'`， 例如：baseLibPath = 'http://192.168.1.10:9000/public/'，则最后的拼接地址为 `http://192.168.1.10:9000/public/libffmpeg_265.js`
+拼接规则为 `baseLibPath + 'libffmpeg_265.js'`， 例如：`baseLibPath = 'http://192.168.1.10:9000/public/'` ，则最后的拼接地址为 `http://192.168.1.10:9000/public/libffmpeg_265.js`
 
 > 无论设置哪一种方式，都必须要求可以通过此链接访问 `libffmpeg_265.js` 文件内容，
 > `libffmpeg_265.js`、`libffmpeg_265.wasm` 这两个文件必须在同一个文件夹下面
