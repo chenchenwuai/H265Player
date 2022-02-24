@@ -1,6 +1,6 @@
 {
   "name": "h265-stream-player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "h265 stream player",
   "main": "lib/h265-player.cjs.js",
   "module": "lib/h265-player.esm.js",
