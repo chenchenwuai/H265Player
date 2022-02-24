@@ -84,7 +84,7 @@ const canvas = document.getElementById('canvas');
 var player = new H265Player(canvas, {
   baseLibPath: "/statics/",
   decoderLogLevel: 0,
-  isDebug: true
+  debug: true
 });
 player.on("ready", () => {
   console.log("ready");
