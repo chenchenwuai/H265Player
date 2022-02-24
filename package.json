@@ -1,39 +1,67 @@
 {
   "name": "h265-player",
-  "version": "0.0.1",
-  "description": "myself webpack cli. learning...",
-  "main": "index.js",
+  "version": "1.0.0",
+  "description": "h265 stream player",
+  "main": "lib/h265-player.cjs.js",
+  "module": "lib/h265-player.esm.js",
+  "browser": "lib/h265-player.umd.js",
+  "files": [
+    "lib/**/*",
+    "statics/**/*"
+  ],
   "scripts": {
-    "dev": "webpack --progress --mode development --config build/webpack.config.js",
-    "build": "webpack --progress --mode production --config build/webpack.config.js",
-    "build:dev": "webpack --progress --mode development --config build/webpack.config.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/chenchenwuai/my-webpack-cli.git"
+    "dev": "rollup --config -w",
+    "build": "rimraf lib && rollup -c",
+    "eslint": "eslint --ext .js --fix ./src",
+    "version": "standard-version",
+    "release": "npm run eslint && npm run build && npm run version && npm pub && git push"
   },
   "keywords": [
-    "webpack",
-    "cli"
+    "h265-player"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenchenwuai/H265Player"
+  },
   "author": "chenwuai",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/chenchenwuai/my-webpack-cli/issues"
+    "url": "https://github.com/chenchenwuai/H265Player/issues"
   },
-  "homepage": "https://github.com/chenchenwuai/my-webpack-cli#readme",
-  "devDependencies": {
-    "babel-core": "^6.26.3",
-    "babel-eslint": "^10.1.0",
-    "babel-loader": "^7.1.5",
-    "babel-plugin-transform-object-rest-spread": "^6.26.0",
-    "babel-preset-env": "^1.7.0",
-    "clean-webpack-plugin": "^3.0.0",
-    "webpack": "^4.41.2",
-    "webpack-cli": "^3.3.9",
-    "worker-loader": "^3.0.1"
-  },
+  "homepage": "https://github.com/chenchenwuai/H265Player#readme",
   "dependencies": {
-    "znu-event": "0.0.7"
+    "znu-event": "^0.0.10"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.13.1",
+    "@babel/preset-env": "^7.13.5",
+    "@rollup/plugin-babel": "^5.3.0",
+    "@rollup/plugin-commonjs": "^20.0.0",
+    "@rollup/plugin-node-resolve": "^13.1.3",
+    "eslint": "^7.20.0",
+    "husky": "^4.2.5",
+    "lint-staged": "^10.2.11",
+    "rimraf": "^2.6.2",
+    "rollup": "^2.39.1",
+    "rollup-plugin-filesize": "^9.1.1",
+    "rollup-plugin-terser": "^7.0.2",
+    "rollup-plugin-web-worker-loader": "^1.6.1",
+    "standard-version": "^8.0.2",
+    "terser": "^5.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "src/**/*.{js}": [
+      "eslint --fix",
+      "git add"
+    ]
   }
 }

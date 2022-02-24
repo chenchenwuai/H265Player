@@ -1,357 +1,426 @@
-import { objectMerge, DECODE_STATUS, PLAYER_STATUS, createUniqueString } from './utils'
+import {
+	DecoderStatus,
+	DecodeMessage,
+	PlayerStatus,
+	DECODE_STATUS,
+	createUniqueString,
+	log
+} from './utils'
 import WebGLPlayer from './webgl.js'
 import EventEmitter from 'znu-event'
-/**
- * `H265Player` constructor.
- *  H265Player 封装类
- *  Version  0.0.1
- */
+import Worker from 'web-worker:./decoder.worker'
+
 class H265Player {
-  
-  constructor(config){
+	constructor(canvas, config) {
+		this.TAG = 'H265Player'
+		this.CLASS_ID = createUniqueString()
 
-    this.TAG = 'H265Player'
-    this.CLASS_ID = createUniqueString()
+		this.playerStatus = PlayerStatus.Idle
+		this.frameBuffer = []
+		this.webglPlayer = null
 
-    this.canvas = null
-    this.webglPlayer = null
-    this.callback = null
+		this.videoWidth = 0
+		this.videoHeight = 0
 
-    this.decodeStatus = DECODE_STATUS.Idle
-    this.playerStatus = PLAYER_STATUS.Idle
+		this.decodeWorker = null
+		this.decoderStatus = DecoderStatus.Idle
 
-    this.DECODER_H265 = 1
+		this.event = new EventEmitter()
 
-    this.decoding           = false
-    this.frameBuffer        = []
+		this.config = {
+			baseLibPath: '/lib/',
+			decoderLogLevel: 0,
+			debug: false
+		}
+		if (config) {
+			this.config = Object.assign({}, this.config, config)
+		}
 
-    this.event = new EventEmitter()
+		this.requestAnimationFrameId = null
 
-    this.config = {
-      decoderPath:'H265Decoder.js',
-      isDebug: false
-    }
-    if (config) {
-      this.config = objectMerge(this.config, config)
-    }
+		this._receiveFirstRenderProgress = false
 
-    this.requestAnimationFrameId = null
+		this.initDecodeWorker()
+		this.initWebglPlayer(canvas)
 
-    this.decodeWorker = null
-    this.initDecodeWorker()
+		this.registerVisibilityEvent((visible) => {
+			if (visible) {
+				this.playerStatus === PlayerStatus.Playing && this.startDecoding()
+			} else {
+				this.playerStatus === PlayerStatus.Playing && this.pauseDecoding()
+			}
+		})
+	}
 
-    this.registerVisibilityEvent(visible=> {
-        if (visible) {
-          this.playerStatus == PLAYER_STATUS.Playing && this.startDecoding();
-        } else {
-          this.playerStatus == PLAYER_STATUS.Playing && this.pauseDecoding();
-        }
-    });
-  }
+	// 初始化 decoder worker
+	initDecodeWorker() {
+		this._log('init decoder')
+		var self = this
+		this.decodeWorker = new Worker()
 
-  initDecodeWorker(){
-    this._Log("initDecoderWorker")
-    var self = this
-    this.decodeWorker = new Worker(this.config.decoderPath);
-    this.decodeWorker.onmessage = function(e){
-      var objData = e.data;
-      self._Log('Get decodeWorker message',JSON.stringify(objData))
-      switch(objData.type){
-        case 'DECODER_INITED':
-          self.onInitDecoder()
-          break
-        case 'WASM_LOADED':
-          this.decodeWorker.postMessage({
-            type:'OPEN_DECODER',
-            config:{
-              isDebug: !!this.config.isDebug,
-              logLevel: !!this.config.isDebug ? 2 : 0
-            }
-          })
-          break
-        case 'DECODER_OPENED':
-          self.onOpenDecoder()
-          break
-        case 'DECODER_OPEN_ERROR':
-          self.onOpenDecoderError(objData.data)
-          break
-        case 'DECODER_DECODE_START':
-          break
-        case 'DECODE_VIDEO_FRAME':
-          self.onVideoFrame(objData)
-          break
-      }
-    }
-  }
+		// 监听 worker 发送过来的消息
+		this.decodeWorker.onmessage = function (e) {
+			const { type, data = {} } = e.data
+			switch (type) {
+				// 解析器创建完成
+				case DecodeMessage.DecoderCreated:
+					self._initDecoder()
+					break
+				// 解析器初始化已准备好
+				case DecodeMessage.DecoderReady:
+					self._onDecoderReady()
+					break
+				// 解析器开启解析
+				case DecodeMessage.DecoderStarted:
+					self._onStartDecoding()
+					break
+				// 解析器暂停解析
+				case DecodeMessage.DecoderPaused:
+					self._onPauseDecoding()
+					break
+				// 解析器结束解析
+				case DecodeMessage.DecoderClosed:
+					self._onCloseDecoding()
+					break
+				// 解析器打开错误
+				case DecodeMessage.DecoderOpenError:
+					self._onDecoderOpenError(data)
+					break
+				// 解析器解析出来的帧数据
+				case DecodeMessage.DecodedVideoFrame:
+					self._onVideoFrame(data)
+					break
+			}
+		}
+	}
 
-  play(canvas,callback){
-    this._Log('Start Play')
-    var res = {
-      err:0,
-      msg:'Success'
-    }
-    var success = true
-    do {
-      if (!canvas) {
-        res.err = -2
-        res.msg = 'Canvas not set'
-        success = false
-        this._Log("[ER] playVideo error, canvas empty.");
-        break
-      }
-      if (!this.decodeWorker) {
-        res.err = -4
-        res.msg = 'Decoder not initialized'
-        success = false
-        this._Log("[ER] Decoder not initialized.")
-        break
-      }
-  
-      this.canvas = canvas
-      this.callback = callback
-  
-      this.playerStatus = PLAYER_STATUS.Playing
-  
-      this.webglPlayer = new WebGLPlayer(this.canvas, {
-        preserveDrawingBuffer: false
-      })
+	// 初始化解析器
+	_initDecoder() {
+		this.decoderStatus = DecoderStatus.Initializing
+		this._log('decoder initiailizing')
+		this.decodeWorker.postMessage({
+			type: DecodeMessage.DecoderInit,
+			config: {
+				debug: !!this.config.debug,
+				baseLibPath: this.config.baseLibPath,
+				logLevel: this.config.decoderLogLevel
+			}
+		})
+	}
 
-      this.startDecoding()
-      this.displayLoop()
+	// 监听到解析器已准备好
+	_onDecoderReady() {
+		this.decoderStatus = DecoderStatus.Ready
+		this._log('decoder ready')
+		if (this.webglPlayer && this.playerStatus === PlayerStatus.Idle) {
+			this._onPlayerReady()
+		}
+	}
 
-    } while (false)
-  
-    return res
-  }
+	// 监听到解析器打开错误
+	_onDecoderOpenError(e) {
+		this._log('decoder open error: ', e)
+		this.decoderStatus = DECODE_STATUS.Closed
+		this.emit('error', new Error(e))
+	}
 
-  displayLoop(){
-    this._Log('displayLoop')
-    if (this.playerStatus !== PLAYER_STATUS.Idle) {
-      this.requestAnimationFrameId = requestAnimationFrame(this.displayLoop.bind(this));
-    }
-    if (this.playerStatus !== PLAYER_STATUS.Playing) {
-      return;
-    }
-    if (this.frameBuffer.length == 0) {
-      return;
-    }
-  
-    // requestAnimationFrame may be 60fps, if stream fps too large,
-    // we need to render more frames in one loop, otherwise display
-    // fps won't catch up with source fps, leads to memory increasing,
-    // set to 2 now.
-    for (let i = 0; i < 2; ++i) {
-      var frame = this.frameBuffer[0];
-      switch (frame.type) {
-          case 'DECODE_VIDEO_FRAME':
-              if (this.displayVideoFrame(frame)) {
-                this.frameBuffer.shift();
-              }
-              break;
-          default:
-              return;
-      }
-  
-      if (this.frameBuffer.length == 0) {
-          break;
-      }
-    }
-  }
+	// 播放器已准备好
+	_onPlayerReady() {
+		this.playerStatus = PlayerStatus.Ready
+		this._log('player ready')
+		this.emit('ready')
+	}
 
-  displayVideoFrame(frame) {
-    if (this.playerStatus !== PLAYER_STATUS.Playing) {
-      return false;
-    }
-  
-    var width = frame.width
-    var height = frame.height
-  
-    this.videoWidth = width
-    this.videoHeight = height
-    this.yLength = width * height
-    this.uvLength = (width / 2) * (height / 2)
-  
-    var data = new Uint8Array(frame.data);
-    this.renderVideoFrame(data);
-    return true;
-  }
+	start() {
+		if (this.playerStatus !== PlayerStatus.Ready) {
+			this._log('player not ready')
+			return
+		}
+		this._displayLoop()
+		this.playerStatus = PlayerStatus.Playing
+	}
 
-  renderVideoFrame(data) {
-    this.webglPlayer.renderFrame(data, this.videoWidth, this.videoHeight, this.yLength, this.uvLength);
-    this.event.emit('renderProgress',{
-      videoHeight:this.videoHeight,
-      videoWidth:this.videoWidth
-    })
-  }
+	// 初始化 webgl player
+	initWebglPlayer(canvas) {
+		this._log('init webgl player')
+		if (!canvas) {
+			this.emit('error', new Error('Not Valid Canvas'))
+			return
+		}
+		this.canvas = canvas
+		this.webglPlayer = new WebGLPlayer(canvas, {
+			preserveDrawingBuffer: false
+		})
+		if (
+			this.decoderStatus === DecoderStatus.Ready &&
+			this.playerStatus === PlayerStatus.Idle
+		) {
+			this._onPlayerReady()
+		}
+	}
 
-  onInitDecoder() {
-    this._Log("init decoder response");
-  }
+	// 解析器开启解析
+	startDecoding() {
+		this.decodeWorker.postMessage({
+			type: DecodeMessage.DecoderStart
+		})
+		this.playerStatus = PlayerStatus.Playing
+	}
+	_onStartDecoding() {
+		this.decoderStatus = DecoderStatus.Open
+	}
 
-  onOpenDecoder() {
-    this._Log("open decoder response");
-    this.startDecoding()
-  }
+	// 解析器暂停解析
+	pauseDecoding() {
+		this.decodeWorker.postMessage({
+			type: DecodeMessage.DecoderPause
+		})
+		this.playerStatus = PlayerStatus.Pause
+	}
+	_onPauseDecoding() {
+		this.decoderStatus = DecoderStatus.Pause
+	}
 
-  onOpenDecoderError(data) {
-    console.error('open h265 decoder error',data)
-  }
+	// 解析器结束解析
+	closeDecoding() {
+		this.decodeWorker.postMessage({
+			type: DecodeMessage.DecoderClose
+		})
+		this.playerStatus = PlayerStatus.Pause
+	}
+	_onCloseDecoding() {
+		this.decoderStatus = DecoderStatus.Closed
+	}
 
-  decode(data,timestamp) {
-    try {
-      this._Log(`Decode Buffer, decoding:${this.decoding} timestamp:${timestamp}`)
-      if(this.decoding){
-        var objData = {
-          type:'DECODER_FEED_BUFFER',
-          data:data,
-          timestamp:timestamp
-        }
-        this.decodeWorker.postMessage(objData,objData.data)
-      }
-    } catch (error) {
-      console.error(error)
-    }
-    
-  }
+	play() {
+		this.startDecoding()
+		this.emit('play')
+	}
+	pause() {
+		this.pauseDecoding()
+		this.emit('pause')
+	}
 
-  startDecoding(){
-    this.decoding = true
-    this.decodeWorker.postMessage({ type:'DECODER_START_DECODE' })
-    this._Log('Send Message: start decode')
-  }
+	feed(data, timestamp) {
+		try {
+			if (this.decoderStatus === DecoderStatus.Open) {
+				this._log(`Decode Buffer, timestamp:${timestamp}`)
+				this.decodeWorker.postMessage(
+					{
+						type: DecodeMessage.DecodeVideoBuffer,
+						data,
+						timestamp
+					},
+					[data]
+				) // 最后一个参数data，表示将 data 的数据控制权完全移交给 worker
+			} else {
+				this._log(
+					`ignore decode buffer, timestamp:${timestamp}, decoder open:${this.decoderStatus === DecoderStatus.Open
+					}`
+				)
+			}
+		} catch (error) {
+			console.error(error)
+		}
+	}
 
-  pauseDecoding(){
-    this.decoding = false
-    this.decodeWorker.postMessage({ type:'DECODER_PAUSE_DECODE' })
-    this._Log('Send Message: pause decode')
-  }
+	_onVideoFrame(frame) {
+		this.frameBuffer.push(frame)
+	}
 
-  stopDecoding(){
-    this.decoding = false
-    this.decodeWorker.postMessage({ type:'DECODER_STOP_DECODE' })
-    this._Log('Send Message: Finish decode')
-  }
+	_displayLoop() {
+		if (this.playerStatus !== PlayerStatus.Idle) {
+			this.requestAnimationFrameId = requestAnimationFrame(
+				this._displayLoop.bind(this)
+			)
+		}
+		if (this.playerStatus !== PlayerStatus.Playing) {
+			return
+		}
+		if (this.frameBuffer.length === 0) {
+			return
+		}
 
-  
-  bufferFrame(frame) {
-    this.decoding && this.frameBuffer.push(frame)
-  }
+		// requestAnimationFrame may be 60fps, if stream fps too large,
+		// we need to render more frames in one loop, otherwise display
+		// fps won't catch up with source fps, leads to memory increasing,
+		// set to 2 now.
+		for (let i = 0; i < 2; ++i) {
+			var frame = this.frameBuffer[0]
+			if (this.displayVideoFrame(frame)) {
+				this.frameBuffer.shift()
+			}
 
-  onVideoFrame(frame) {
-    this.bufferFrame(frame)
-  }
+			if (this.frameBuffer.length === 0) {
+				break
+			}
+		}
+	}
 
-  fullscreen() {
-    if (this.webglPlayer) {
-      this.webglPlayer.fullscreen()
-    }
-  }
+	_cleanDisplayLoop() {
+		if (this.requestAnimationFrameId) {
+			window.cancelAnimationFrame(this.requestAnimationFrameId)
+		}
+	}
 
-  registerVisibilityEvent(cb) {
-    var hidden = "hidden";
+	displayVideoFrame(frame) {
+		if (this.playerStatus !== PlayerStatus.Playing) {
+			return false
+		}
 
-    // Standards:
-    if (hidden in document) {
-        document.addEventListener("visibilitychange", onchange);
-    } else if ((hidden = "mozHidden") in document) {
-        document.addEventListener("mozvisibilitychange", onchange);
-    } else if ((hidden = "webkitHidden") in document) {
-        document.addEventListener("webkitvisibilitychange", onchange);
-    } else if ((hidden = "msHidden") in document) {
-        document.addEventListener("msvisibilitychange", onchange);
-    } else if ("onfocusin" in document) {
-        // IE 9 and lower.
-        document.onfocusin = document.onfocusout = onchange;
-    } else {
-        // All others.
-        window.onpageshow = window.onpagehide = window.onfocus = window.onblur = onchange;
-    }
+		var width = frame.width
+		var height = frame.height
 
-    function onchange (evt) {
-        var v = true;
-        var h = false;
-        var evtMap = {
-            focus:v,
-            focusin:v,
-            pageshow:v,
-            blur:h,
-            focusout:h,
-            pagehide:h
-        };
+		if (this.videoWidth !== width || this.videoHeight !== height) {
+			this.emit('size', { width, height })
+		}
 
-        evt = evt || window.event;
-        var visible = v;
-        if (evt.type in evtMap) {
-            visible = evtMap[evt.type];
-        } else {
-            visible = this[hidden] ? h : v;
-        }
-        cb(visible);
-    }
+		this.videoWidth = width
+		this.videoHeight = height
+		this.yLength = width * height
+		this.uvLength = (width / 2) * (height / 2)
 
-    // set the initial state (but only if browser supports the Page Visibility API)
-    if( document[hidden] !== undefined ) {
-        onchange({type: document[hidden] ? "blur" : "focus"});
-    }
-  }
+		var data = new Uint8Array(frame.data)
+		this.renderVideoFrame(data)
+		return true
+	}
 
-  async clean(){
-    if(!this.cleaning){
-      this.pauseDecoding()
-    }
-    if(this.requestAnimationFrameId){
-      window.cancelAnimationFrame(this.requestAnimationFrameId)
-    }
+	renderVideoFrame(data) {
+		this.webglPlayer.renderFrame(
+			data,
+			this.videoWidth,
+			this.videoHeight,
+			this.yLength,
+			this.uvLength
+		)
+		if (!this._receiveFirstRenderProgress) {
+			this._receiveFirstRenderProgress = true
+			this.emit('play')
+		}
+	}
 
-    this.canvas = null
-    this.webglPlayer = null
-    this.callback = null
+	fullscreen() {
+		if (this.webglPlayer) {
+			this.webglPlayer.fullscreen()
+		}
+	}
 
-    this.decodeStatus = DECODE_STATUS.Idle
-    this.playerStatus = PLAYER_STATUS.Idle
+	registerVisibilityEvent(cb) {
+		var hidden = 'hidden'
 
-    this.decoding           = false
-    this.frameBuffer        = []
+		// Standards:
+		if (hidden in document) {
+			document.addEventListener('visibilitychange', onchange)
+		} else if ((hidden = 'mozHidden') in document) {
+			document.addEventListener('mozvisibilitychange', onchange)
+		} else if ((hidden = 'webkitHidden') in document) {
+			document.addEventListener('webkitvisibilitychange', onchange)
+		} else if ((hidden = 'msHidden') in document) {
+			document.addEventListener('msvisibilitychange', onchange)
+		} else if ('onfocusin' in document) {
+			// IE 9 and lower.
+			document.onfocusin = document.onfocusout = onchange
+		} else {
+			// All others.
+			window.onpageshow =
+				window.onpagehide =
+				window.onfocus =
+				window.onblur =
+				onchange
+		}
 
-    if(this.event){
-      await this.event.offAll()
-    }
+		function onchange(evt) {
+			var v = true
+			var h = false
+			var evtMap = {
+				focus: v,
+				focusin: v,
+				pageshow: v,
+				blur: h,
+				focusout: h,
+				pagehide: h
+			}
 
-  }
+			evt = evt || window.event
+			var visible = v
+			if (evt.type in evtMap) {
+				visible = evtMap[evt.type]
+			} else {
+				visible = this[hidden] ? h : v
+			}
+			cb(visible)
+		}
 
-  async destroy() {
-    await this.stopDecoding()
-    this.cleaning = true
-    await this.clean()
+		// set the initial state (but only if browser supports the Page Visibility API)
+		if (document[hidden] !== undefined) {
+			onchange({
+				type: document[hidden] ? 'blur' : 'focus'
+			})
+		}
+	}
 
-  }
+	async clean() {
+		if (!this.cleaning) {
+			this.pauseDecoding()
+		}
+		this._cleanDisplayLoop()
 
-  on(name,listener){
-    this.event.on(name,listener)
-  }
+		this.canvas = null
+		this.webglPlayer = null
+		this.callback = null
 
-  off(name,listener){
-    this.event.off(name,listener)
-  }
+		this.decoderStatus = DECODE_STATUS.Idle
+		this.playerStatus = PlayerStatus.Idle
 
-  _Log() {
-    if (!this.config.isDebug) return
-    var now = new Date(Date.now())
-    var hour = now.getHours()
-    var min = now.getMinutes()
-    var sec = now.getSeconds()
-    var ms = now.getMilliseconds()
-    var currentTimeStr = hour + ":" + min + ":" + sec + ":" + ms
-    console.log(`[${currentTimeStr}][ ${this.TAG}|${this.CLASS_ID} ] : `, ...arguments) // https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Function/arguments
-  }
+		this.decoding = false
+		this.frameBuffer = []
 
-  static isSupported(){
-    try {
-      return (typeof self.Worker !== 'undefined' && typeof self.WebGLRenderingContext !== 'undefined')
-    } catch (e) {
-      return false
-    }
-  }
+		this._receiveFirstRenderProgress = false
+
+		this.emit('pause')
+
+		if (this.decodeWorker) {
+			this.decodeWorker.terminate()
+		}
+
+		if (this.event) {
+			await this.event.offAll()
+		}
+	}
+
+	async destroy() {
+		await this.closeDecoding()
+		this.cleaning = true
+		await this.clean()
+	}
+
+	on(name, listener) {
+		this.event.on(name, listener)
+	}
+
+	off(name, listener) {
+		this.event.off(name, listener)
+	}
+
+	emit() {
+		this.event.emit(...arguments)
+	}
+
+	_log() {
+		if (!this.config.debug) return
+		log(this.TAG, this.CLASS_ID, ...arguments)
+	}
+
+	static isSupported() {
+		try {
+			return (
+				typeof self.Worker !== 'undefined' &&
+				typeof self.WebGLRenderingContext !== 'undefined'
+			)
+		} catch (e) {
+			return false
+		}
+	}
 }
 if (window) window.H265Player = H265Player
 export default H265Player

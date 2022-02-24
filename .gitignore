@@ -1,3 +1,10 @@
-node_modules/
-
+node_modules
+coverage
 .vscode
+.cache
+false
+dist
+debug.log
+temp
+lib
+demo

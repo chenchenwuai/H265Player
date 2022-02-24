@@ -1,0 +1,6 @@
+lib
+node_modules
+coverage
+test/*
+temp
+demo
