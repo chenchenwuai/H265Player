@@ -59,3 +59,14 @@ export function log(TAG, ID, ...rest) {
 	var currentTimeStr = hour + ':' + min + ':' + sec + ':' + ms
 	console.log(`[${currentTimeStr}]-[ ${TAG}|${ID} ] : `, ...rest)
 }
+
+export function getHiddenProp() {
+	const prefixs = ['webkit', 'moz', 'mos', 'o']
+	if ('hidden' in document) return document.hidden
+	for (let i = 0; i < prefixs.length; i++) {
+		if (`${prefixs[i]}Hidden` in document) {
+			return document[`${prefixs[i]}Hidden`]
+		}
+	}
+	return null
+}

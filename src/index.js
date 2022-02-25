@@ -4,7 +4,8 @@ import {
 	PlayerStatus,
 	DECODE_STATUS,
 	createUniqueString,
-	log
+	log,
+	getHiddenProp
 } from './utils'
 import WebGLPlayer from './webgl.js'
 import EventEmitter from 'znu-event'
@@ -43,8 +44,9 @@ class H265Player {
 		this.initDecodeWorker()
 		this.initWebglPlayer(canvas)
 
-		this.registerVisibilityEvent((visible) => {
-			if (visible) {
+		this._onVisibilityChange = () => {
+			const isHidden = getHiddenProp()
+			if (!isHidden) {
 				if (this.playerStatus === PlayerStatus.Pause) {
 					this.play()
 				}
@@ -53,7 +55,9 @@ class H265Player {
 					this.pause()
 				}
 			}
-		})
+		}
+
+		document.addEventListener('visibilitychange', this._onVisibilityChange, false)
 	}
 
 	// 初始化 decoder worker
@@ -309,60 +313,6 @@ class H265Player {
 		}
 	}
 
-	registerVisibilityEvent(cb) {
-		var hidden = 'hidden'
-
-		// Standards:
-		if (hidden in document) {
-			document.addEventListener('visibilitychange', onchange)
-		} else if ((hidden = 'mozHidden') in document) {
-			document.addEventListener('mozvisibilitychange', onchange)
-		} else if ((hidden = 'webkitHidden') in document) {
-			document.addEventListener('webkitvisibilitychange', onchange)
-		} else if ((hidden = 'msHidden') in document) {
-			document.addEventListener('msvisibilitychange', onchange)
-		} else if ('onfocusin' in document) {
-			// IE 9 and lower.
-			document.onfocusin = document.onfocusout = onchange
-		} else {
-			// All others.
-			window.onpageshow =
-				window.onpagehide =
-				window.onfocus =
-				window.onblur =
-				onchange
-		}
-
-		function onchange(evt) {
-			var v = true
-			var h = false
-			var evtMap = {
-				focus: v,
-				focusin: v,
-				pageshow: v,
-				blur: h,
-				focusout: h,
-				pagehide: h
-			}
-
-			evt = evt || window.event
-			var visible = v
-			if (evt.type in evtMap) {
-				visible = evtMap[evt.type]
-			} else {
-				visible = this[hidden] ? h : v
-			}
-			cb(visible)
-		}
-
-		// set the initial state (but only if browser supports the Page Visibility API)
-		if (document[hidden] !== undefined) {
-			onchange({
-				type: document[hidden] ? 'blur' : 'focus'
-			})
-		}
-	}
-
 	async clean() {
 		if (!this.cleaning) {
 			this.pauseDecoding()
@@ -393,7 +343,8 @@ class H265Player {
 	}
 
 	async destroy() {
-		await this.closeDecoding()
+		document.removeEventListener('visibilitychange', this._onVisibilityChange, false)
+		this.closeDecoding()
 		this.cleaning = true
 		await this.clean()
 	}
