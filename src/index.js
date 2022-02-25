@@ -45,9 +45,13 @@ class H265Player {
 
 		this.registerVisibilityEvent((visible) => {
 			if (visible) {
-				this.playerStatus === PlayerStatus.Playing && this.startDecoding()
+				if (this.playerStatus === PlayerStatus.Pause) {
+					this.play()
+				}
 			} else {
-				this.playerStatus === PlayerStatus.Playing && this.pauseDecoding()
+				if (this.playerStatus === PlayerStatus.Playing) {
+					this.pause()
+				}
 			}
 		})
 	}
